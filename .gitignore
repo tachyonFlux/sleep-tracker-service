@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+*.db
+realdata/          # bulky raw PhysioNet files; fixtures (tests/fixtures) are committed
