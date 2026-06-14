@@ -7,10 +7,11 @@ services:
     # Or, if you push an image to a registry:
     # image: youruser/sleep-tracker-service:latest
     container_name: sleep-tracker
+    user: 1026:100
     restart: unless-stopped
     ports:
       - "8765:8000"          # host:container — pick an unused host port
     volumes:
-      - ./data:/data         # raw nights + hypnograms (SQLite)
+      - /volume1/docker/sleep-tracker/data:/data         # raw nights + hypnograms (SQLite)
     environment:
       - SLEEP_DB_PATH=/data/sleep.db
