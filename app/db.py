@@ -57,6 +57,13 @@ class Store:
         self._conn.commit()
         return int(cur.lastrowid)
 
+    def get_raw(self, night_id: int) -> dict | None:
+        """Return the verbatim input payload (incl. all epochs) for one night."""
+        row = self._conn.execute(
+            "SELECT raw_json FROM nights WHERE id = ?", (night_id,)
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
     def recent(self, limit: int = 30) -> list[dict]:
         rows = self._conn.execute(
             "SELECT id, night_start_utc, tz_offset_min, result_json "
