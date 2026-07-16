@@ -7,6 +7,8 @@ all sleep is recorded (and each session maps to a Health Connect record).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from ..config import DEFAULTS, Params
@@ -47,16 +49,47 @@ def _to_intervals(stages: np.ndarray, night_start: int, epoch_s: int) -> list[St
     return intervals
 
 
+def _rescale_epoch_counts(params: Params, epoch_seconds: int) -> Params:
+    """Adapt params to a different epoch length.
+
+    Thresholds expressed in *epoch counts* were calibrated at the default epoch
+    length; keep their real-time durations constant by rescaling the counts.
+    Cole-Kripke weights are per-minute by design and are deliberately NOT
+    rescaled — at 60 s epochs they apply at native resolution.
+    """
+    r = params.epoch_seconds / epoch_seconds
+
+    def scale(v: int) -> int:
+        return max(1, round(v * r))
+
+    return Params(
+        epoch_seconds=epoch_seconds,
+        hr=replace(
+            params.hr,
+            hr_smooth_epochs=scale(params.hr.hr_smooth_epochs),
+            bridge_gap_epochs=scale(params.hr.bridge_gap_epochs),
+            min_block_epochs=scale(params.hr.min_block_epochs),
+        ),
+        actigraphy=params.actigraphy,
+        staging=replace(
+            params.staging,
+            deep_window_epochs=scale(params.staging.deep_window_epochs),
+            hrv_window_epochs=scale(params.staging.hrv_window_epochs),
+        ),
+        smoothing=replace(
+            params.smoothing,
+            min_wake_epochs=scale(params.smoothing.min_wake_epochs),
+            min_deep_epochs=scale(params.smoothing.min_deep_epochs),
+            min_rem_epochs=scale(params.smoothing.min_rem_epochs),
+            min_light_epochs=scale(params.smoothing.min_light_epochs),
+        ),
+    )
+
+
 def run_fusion(night: NightIn, params: Params = DEFAULTS) -> HypnogramOut:
     # Honour the night's epoch length over the default if they differ.
     if night.epoch_seconds != params.epoch_seconds:
-        params = Params(
-            epoch_seconds=night.epoch_seconds,
-            hr=params.hr,
-            actigraphy=params.actigraphy,
-            staging=params.staging,
-            smoothing=params.smoothing,
-        )
+        params = _rescale_epoch_counts(params, night.epoch_seconds)
     epoch_s = params.epoch_seconds
 
     series = build_series(night.epochs, params)
