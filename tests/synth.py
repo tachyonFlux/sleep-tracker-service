@@ -11,9 +11,23 @@ from __future__ import annotations
 
 import random
 
+from dataclasses import replace
+
+from app.config import DEFAULTS, Params
 from app.models import Epoch, NightIn
 
 EPOCH_S = 30
+
+# Params for data in this module's LEGACY units: 30 s epochs of |delta-mag| sums
+# (NOISE_FLOOR jitter model). The production default count_scale is calibrated
+# for PT2 HealthService VMC; these fixtures were calibrated at 0.001.
+LEGACY_PARAMS = Params(
+    epoch_seconds=DEFAULTS.epoch_seconds,
+    hr=DEFAULTS.hr,
+    actigraphy=replace(DEFAULTS.actigraphy, count_scale=0.001),
+    staging=DEFAULTS.staging,
+    smoothing=DEFAULTS.smoothing,
+)
 EPOCHS_PER_MIN = 60 // EPOCH_S
 NOISE_FLOOR = 2000.0  # milli-g; matches the observed real-data still floor
 

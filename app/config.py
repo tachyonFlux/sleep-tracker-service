@@ -51,9 +51,11 @@ class ActigraphyParams:
     # *excess*, which makes count_scale robust to absolute sensor units.
     floor_percentile: float = 10.0
     # Rescales the de-floored activity counts into Cole-Kripke's expected range.
-    # Calibrated against the PhysioNet sleep-accel dataset (see tests). Re-verify
-    # on real PT2 data — its milli-g scale may differ.
-    count_scale: float = 0.001
+    # Calibrated 2026-06 against real PT2 HealthService VMC nights with
+    # user-confirmed wake windows (0.001 was the PhysioNet |delta-mag| value;
+    # VMC units run lower, so wake needs a bigger scale). Sweep showed 0.003 =
+    # knee of catch-vs-false-wake curve on nights 6/7.
+    count_scale: float = 0.003
     # Cole-Kripke (1992) "optimal" coefficients, weights for epochs
     # [-4, -3, -2, -1, 0, +1, +2] relative to the scored epoch.
     ck_weights: tuple[float, ...] = (106.0, 54.0, 58.0, 76.0, 230.0, 74.0, 67.0)
@@ -89,6 +91,15 @@ class StagingParams:
 
     # Window (epochs) for the epoch-to-epoch HR variability estimate.
     hrv_window_epochs: int = 5
+
+    # WAKE-BY-HR: actigraphy cannot see a quiet-but-roused awakening (lying
+    # still, tending a child...). Smoothed HR sustained this far above the
+    # session median HR marks the epoch AWAKE even if movement was low.
+    # Margin sits above the REM band (REM ~ floor+5; median is above floor,
+    # so median+12 clears it) — validated on real nights 6/7.
+    wake_hr_margin_bpm: float = 12.0
+    # ...sustained for at least this many epochs (6 = 3 min at 30 s).
+    wake_hr_min_epochs: int = 6
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.fusion import run_fusion
 from app.models import HypnogramOut, NightIn
+from tests.synth import LEGACY_PARAMS
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -82,5 +83,5 @@ def sleep_wake_confusion(pred: list[str], truth: list[str | None]) -> SleepWake:
 
 
 def grade_fixture(fix: dict) -> SleepWake:
-    res = run_fusion(fixture_to_night(fix))
+    res = run_fusion(fixture_to_night(fix), LEGACY_PARAMS)
     return sleep_wake_confusion(predicted_per_epoch(fix, res), fix["truth"])

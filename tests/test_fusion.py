@@ -13,7 +13,7 @@ from app.db import Store
 from app.fusion import run_fusion
 from app.fusion.preprocess import build_series
 from app.models import Epoch, NightIn, Stage
-from tests.synth import EPOCH_S, NOISE_FLOOR, _act, make_night
+from tests.synth import EPOCH_S, LEGACY_PARAMS, NOISE_FLOOR, _act, make_night
 
 
 def only(res):
@@ -28,7 +28,7 @@ def _interval_seconds(session, stage: Stage) -> int:
 
 def test_detects_a_plausible_session():
     night = make_night(seed=1)
-    res = run_fusion(night)
+    res = run_fusion(night, LEGACY_PARAMS)
     s = only(res)
 
     # Session should sit inside the captured window and have real duration.
@@ -40,7 +40,7 @@ def test_detects_a_plausible_session():
 
 
 def test_all_four_stages_present():
-    res = run_fusion(make_night(seed=2))
+    res = run_fusion(make_night(seed=2), LEGACY_PARAMS)
     # Sleep/wake must work; the synthetic night has clear deep/REM structure.
     assert res.summary.light_min > 0
     assert res.summary.deep_min > 0
@@ -48,7 +48,7 @@ def test_all_four_stages_present():
 
 
 def test_stage_durations_sum_to_session():
-    s = only(run_fusion(make_night(seed=3)))
+    s = only(run_fusion(make_night(seed=3), LEGACY_PARAMS))
     span_min = (s.session_end_utc - s.session_start_utc) / 60.0
     staged = sum(_interval_seconds(s, st) for st in Stage) / 60.0
     assert staged == pytest.approx(span_min, abs=0.6)
@@ -59,7 +59,7 @@ def test_stage_durations_sum_to_session():
 
 
 def test_intervals_are_contiguous_and_ordered():
-    s = only(run_fusion(make_night(seed=4)))
+    s = only(run_fusion(make_night(seed=4), LEGACY_PARAMS))
     assert s.stages[0].start_utc == s.session_start_utc
     assert s.stages[-1].end_utc == s.session_end_utc
     for a, b in zip(s.stages, s.stages[1:]):
@@ -70,8 +70,8 @@ def test_intervals_are_contiguous_and_ordered():
 def test_mid_night_wake_under_60min_stays_one_session():
     # A 45-min awakening must NOT split the night: one session should span it,
     # with sleep on BOTH sides of the wake and the wake surfacing as WASO.
-    baseline = run_fusion(make_night(seed=10))
-    res = run_fusion(make_night(seed=10, mid_wake_min=45, mid_wake_at_frac=0.5))
+    baseline = run_fusion(make_night(seed=10), LEGACY_PARAMS)
+    res = run_fusion(make_night(seed=10, mid_wake_min=45, mid_wake_at_frac=0.5), LEGACY_PARAMS)
     s = only(res)
 
     span_min = (s.session_end_utc - s.session_start_utc) / 60.0
@@ -92,8 +92,8 @@ def test_mid_night_wake_under_60min_stays_one_session():
 
 @pytest.mark.parametrize("wake_min", [15, 30, 50])
 def test_short_mid_wakes_preserve_total_sleep(wake_min):
-    baseline = run_fusion(make_night(seed=12)).summary.total_sleep_min
-    res = run_fusion(make_night(seed=12, mid_wake_min=wake_min, mid_wake_at_frac=0.4))
+    baseline = run_fusion(make_night(seed=12), LEGACY_PARAMS).summary.total_sleep_min
+    res = run_fusion(make_night(seed=12, mid_wake_min=wake_min, mid_wake_at_frac=0.4), LEGACY_PARAMS)
     # Sub-hour wakes never cost us a sleep half.
     assert res.summary.total_sleep_min >= baseline - 60
 
@@ -115,7 +115,7 @@ def test_long_wake_splits_into_two_sessions_keeping_all_sleep():
     for _ in range(240):  # 120 min sleep
         ep.append(Epoch(t=t, act=int(floor() + abs(rng.gauss(0, 30))), hr=54 + int(rng.gauss(0, 1)))); t += 1
 
-    res = run_fusion(NightIn(night_start_utc=0, tz_offset_min=0, epoch_seconds=EPOCH_S, epochs=ep))
+    res = run_fusion(NightIn(night_start_utc=0, tz_offset_min=0, epoch_seconds=EPOCH_S, epochs=ep), LEGACY_PARAMS)
 
     assert len(res.sessions) == 2, f"expected 2 sessions, got {len(res.sessions)}"
     # Both ~120 min sleep stretches recorded (≈240 total), not truncated to one.
@@ -129,7 +129,7 @@ def test_long_wake_splits_into_two_sessions_keeping_all_sleep():
 
 def test_survives_bluetooth_gaps():
     # 20% of epochs dropped (simulated BT batching loss) should still resolve.
-    res = run_fusion(make_night(seed=5, drop_fraction=0.20))
+    res = run_fusion(make_night(seed=5, drop_fraction=0.20), LEGACY_PARAMS)
     assert res.summary.total_sleep_min > 250
 
 
@@ -139,12 +139,12 @@ def test_no_sleep_when_only_movement():
     rng = random.Random(99)
     epochs = [Epoch(t=i, act=_act("wake", rng), hr=72 + int(rng.gauss(0, 4))) for i in range(200)]
     night = NightIn(night_start_utc=0, tz_offset_min=0, epoch_seconds=EPOCH_S, epochs=epochs)
-    res = run_fusion(night)
+    res = run_fusion(night, LEGACY_PARAMS)
     assert res.summary.total_sleep_min < 30
 
 
 def test_min_bout_lengths_enforced():
-    res = run_fusion(make_night(seed=6))
+    res = run_fusion(make_night(seed=6), LEGACY_PARAMS)
     sm = DEFAULTS.smoothing
     floor = {
         Stage.AWAKE: sm.min_wake_epochs,

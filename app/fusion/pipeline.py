@@ -75,6 +75,7 @@ def _rescale_epoch_counts(params: Params, epoch_seconds: int) -> Params:
             params.staging,
             deep_window_epochs=scale(params.staging.deep_window_epochs),
             hrv_window_epochs=scale(params.staging.hrv_window_epochs),
+            wake_hr_min_epochs=scale(params.staging.wake_hr_min_epochs),
         ),
         smoothing=replace(
             params.smoothing,

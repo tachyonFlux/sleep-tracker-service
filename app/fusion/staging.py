@@ -23,6 +23,24 @@ def _hr_variability(series: Series, window: int) -> np.ndarray:
     return moving_average(diff, window)
 
 
+def _sustained_runs(mask: np.ndarray, min_len: int) -> np.ndarray:
+    """True only where `mask` holds in a run of at least `min_len` epochs."""
+    out = np.zeros_like(mask)
+    n = len(mask)
+    i = 0
+    while i < n:
+        if mask[i]:
+            j = i
+            while j < n and mask[j]:
+                j += 1
+            if j - i >= min_len:
+                out[i:j] = True
+            i = j
+        else:
+            i += 1
+    return out
+
+
 def stage_asleep(
     series: Series,
     asleep: np.ndarray,
@@ -45,13 +63,21 @@ def stage_asleep(
     if not asleep_here.any():
         return stages
 
-    # Everything asleep starts as LIGHT; deep/REM carve out from there.
-    stages[asleep_here] = LIGHT
-
-    # Night HR floor measured within the sleep period's valid readings.
+    # Night HR floor / median measured within the sleep period's valid readings.
     period_hr = series.hr[onset:offset]
     valid = period_hr[np.isfinite(period_hr)]
     hr_floor = float(np.percentile(valid, s.hr_floor_percentile)) if valid.size else 0.0
+    hr_median = float(np.median(valid)) if valid.size else 0.0
+
+    # --- WAKE-BY-HR: quiet-but-roused wake is invisible to actigraphy; a
+    # sustained run of smoothed HR well above the session median recovers it. ---
+    if valid.size:
+        hr_smooth = moving_average(series.hr_filled, s.hrv_window_epochs)
+        elevated = hr_smooth > hr_median + s.wake_hr_margin_bpm
+        asleep_here &= ~_sustained_runs(elevated, s.wake_hr_min_epochs)
+
+    # Everything asleep starts as LIGHT; deep/REM carve out from there.
+    stages[asleep_here] = LIGHT
 
     hrv = _hr_variability(series, s.hrv_window_epochs)
     sustained_low_act = moving_average(series.act, s.deep_window_epochs)
