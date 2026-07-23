@@ -1,9 +1,16 @@
 """FastAPI entrypoint (handoff doc §6).
 
 Endpoints:
-  GET  /healthz       liveness probe
-  POST /night         ingest epoch features -> fusion -> hypnogram (and store)
-  GET  /nights        recent stored hypnograms (history / debugging)
+  GET  /healthz                   liveness probe
+  POST /night                     ingest epoch features -> fusion -> hypnogram (and store)
+  GET  /nights                    recent stored hypnograms (history / debugging)
+  GET  /nights/{id}/raw           verbatim input + diagnostic summary
+  POST /nights/{id}/reprocess     re-run one stored night through current code
+  POST /nights/reprocess          re-run every stored night through current code
+
+Stored results are frozen at upload time — GET /nights never recomputes. After
+a fusion change is deployed, the reprocess endpoints replay stored raw through
+the new code so history reflects it too (new nights pick it up automatically).
 
 The phone POSTs the night here over the LAN/VPN (same path it reaches Vikunja);
 this service returns the hypnogram and the phone writes it to Health Connect.
@@ -52,6 +59,45 @@ def post_night(night: NightIn) -> HypnogramOut:
 @app.get("/nights")
 def get_nights(limit: int = 30) -> dict:
     return {"nights": store.recent(limit=limit)}
+
+
+def _summary_delta(before: dict | None, after: HypnogramOut) -> dict:
+    """Compact before/after stage-minute summary for a reprocessed night."""
+    b = before.get("summary") if before else None
+    a = after.summary
+    fields = ("total_sleep_min", "awake_min", "light_min", "deep_min", "rem_min")
+    return {
+        "before": {f: (b.get(f) if b else None) for f in fields},
+        "after": {f: getattr(a, f) for f in fields},
+    }
+
+
+@app.post("/nights/{night_id}/reprocess", response_model=HypnogramOut)
+def reprocess_night(night_id: int) -> HypnogramOut:
+    """Re-run one stored night's raw input through the current fusion code and
+    overwrite its stored hypnogram in place (raw input is untouched)."""
+    raw = store.get_raw(night_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="night not found")
+    result = run_fusion(NightIn(**raw))
+    store.update_result(night_id, result)
+    return result
+
+
+@app.post("/nights/reprocess")
+def reprocess_all() -> dict:
+    """Re-run every stored night through the current fusion code. Returns a
+    per-night before/after stage-minute diff so a redeploy's effect is visible."""
+    nights = []
+    for nid in store.all_ids():
+        raw = store.get_raw(nid)
+        if raw is None:  # deleted between listing and fetch; skip
+            continue
+        before = store.get_result(nid)
+        result = run_fusion(NightIn(**raw))
+        store.update_result(nid, result)
+        nights.append({"id": nid, **_summary_delta(before, result)})
+    return {"reprocessed": len(nights), "nights": nights}
 
 
 @app.get("/nights/{night_id}/raw")

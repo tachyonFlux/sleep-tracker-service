@@ -12,7 +12,7 @@ from app.config import DEFAULTS
 from app.db import Store
 from app.fusion import run_fusion
 from app.fusion.preprocess import build_series
-from app.models import Epoch, NightIn, Stage
+from app.models import Epoch, HypnogramOut, NightIn, NightSummary, Stage
 from tests.synth import EPOCH_S, LEGACY_PARAMS, NOISE_FLOOR, _act, make_night
 
 
@@ -188,3 +188,39 @@ def test_api_and_storage_roundtrip():
     nights = client.get("/nights").json()["nights"]
     assert len(nights) == 1
     assert nights[0]["result"]["summary"]["total_sleep_min"] > 0
+
+
+def test_reprocess_replays_stored_raw():
+    from app import main as main_mod
+
+    main_mod.store = Store(":memory:")
+    client = TestClient(main_mod.app)
+
+    orig = client.post("/night", json=make_night(seed=8).model_dump()).json()
+    night_id = client.get("/nights").json()["nights"][0]["id"]
+
+    # Corrupt the stored result to prove reprocess overwrites it from raw.
+    empty_summary = NightSummary(
+        session_count=0, total_sleep_min=0, awake_min=0,
+        light_min=0, deep_min=0, rem_min=0,
+    )
+    main_mod.store.update_result(
+        night_id,
+        HypnogramOut(night_start_utc=0, tz_offset_min=0, sessions=[], summary=empty_summary),
+    )
+    assert client.get("/nights").json()["nights"][0]["result"]["summary"][
+        "session_count"
+    ] == 0
+
+    # Reprocessing the same raw under the same code restores the same result.
+    redone = client.post(f"/nights/{night_id}/reprocess").json()
+    assert redone["summary"] == orig["summary"]
+    assert client.get("/nights").json()["nights"][0]["result"]["summary"] == orig["summary"]
+
+    client.post("/night", json=make_night(seed=9).model_dump())
+    bulk = client.post("/nights/reprocess").json()
+    assert bulk["reprocessed"] == 2
+    assert {n["id"] for n in bulk["nights"]} == set(main_mod.store.all_ids())
+    assert all("before" in n and "after" in n for n in bulk["nights"])
+
+    assert client.post("/nights/9999/reprocess").status_code == 404

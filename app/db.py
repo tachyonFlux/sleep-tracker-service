@@ -64,6 +64,32 @@ class Store:
         ).fetchone()
         return json.loads(row[0]) if row else None
 
+    def update_result(self, night_id: int, result: HypnogramOut) -> bool:
+        """Overwrite the stored hypnogram for one night (reprocess in place).
+
+        The raw input is left untouched, so this is safe to re-run whenever the
+        fusion code changes. Returns False if the night id doesn't exist.
+        """
+        cur = self._conn.execute(
+            "UPDATE nights SET result_json = ? WHERE id = ?",
+            (result.model_dump_json(), night_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def all_ids(self) -> list[int]:
+        """Every night id, oldest first (stable order for bulk reprocessing)."""
+        rows = self._conn.execute(
+            "SELECT id FROM nights ORDER BY night_start_utc ASC, id ASC"
+        ).fetchall()
+        return [int(r[0]) for r in rows]
+
+    def get_result(self, night_id: int) -> dict | None:
+        row = self._conn.execute(
+            "SELECT result_json FROM nights WHERE id = ?", (night_id,)
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
     def recent(self, limit: int = 30) -> list[dict]:
         rows = self._conn.execute(
             "SELECT id, night_start_utc, tz_offset_min, result_json "
