@@ -133,6 +133,27 @@ def test_survives_bluetooth_gaps():
     assert res.summary.total_sleep_min > 250
 
 
+def test_low_hr_coverage_yields_no_sessions():
+    # A night where the HR sensor barely read (like the real night-10 dropout,
+    # 7.7% coverage) is un-stageable — the guard must emit no sessions rather
+    # than invent a hypnogram from interpolation.
+    night = make_night(seed=3)
+    # Blank out HR on all but ~8% of epochs (hr=0 => "no reading").
+    eps = [
+        Epoch(t=e.t, act=e.act, hr=(e.hr if i % 12 == 0 else 0))
+        for i, e in enumerate(night.epochs)
+    ]
+    starved = NightIn(
+        night_start_utc=night.night_start_utc, tz_offset_min=night.tz_offset_min,
+        epoch_seconds=night.epoch_seconds, epochs=eps,
+    )
+    res = run_fusion(starved, LEGACY_PARAMS)
+    assert res.summary.session_count == 0
+    assert res.summary.total_sleep_min == 0
+    # Same night with HR intact still stages normally (guard is coverage-gated).
+    assert run_fusion(night, LEGACY_PARAMS).summary.session_count >= 1
+
+
 def test_no_sleep_when_only_movement():
     # Pure restless-wake night: spiky, variable high movement (not a flat value,
     # which floor-subtraction would zero). Expect no sleep session of substance.

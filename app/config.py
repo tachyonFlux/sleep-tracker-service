@@ -123,6 +123,12 @@ class Params:
     """Top-level parameter bundle passed through the whole pipeline."""
 
     epoch_seconds: int = 30
+    # Data-quality gate: staging is 100% HR-driven, so a night where the HR
+    # sensor barely read is un-stageable. Below this fraction of epochs carrying
+    # an HR reading, emit NO sessions (a "not enough signal" night) rather than
+    # inventing a hypnogram from interpolation. Real failure seen at 0.077 (night
+    # 10, sensor dropout); healthy nights run 0.96-1.00, so 0.5 cleanly separates.
+    min_hr_coverage: float = 0.5
     hr: HRPeriodParams = field(default_factory=HRPeriodParams)
     actigraphy: ActigraphyParams = field(default_factory=ActigraphyParams)
     staging: StagingParams = field(default_factory=StagingParams)

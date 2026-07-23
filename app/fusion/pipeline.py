@@ -64,6 +64,7 @@ def _rescale_epoch_counts(params: Params, epoch_seconds: int) -> Params:
 
     return Params(
         epoch_seconds=epoch_seconds,
+        min_hr_coverage=params.min_hr_coverage,
         hr=replace(
             params.hr,
             hr_smooth_epochs=scale(params.hr.hr_smooth_epochs),
@@ -94,6 +95,18 @@ def run_fusion(night: NightIn, params: Params = DEFAULTS) -> HypnogramOut:
     epoch_s = params.epoch_seconds
 
     series = build_series(night.epochs, params)
+
+    # Data-quality gate: without enough HR the night is un-stageable, so emit no
+    # sessions rather than a hypnogram invented from sparse interpolation. (The
+    # raw is still stored, so a future fix can reprocess it.)
+    hr_coverage = float(np.isfinite(series.hr).mean()) if series.n else 0.0
+    if hr_coverage < params.min_hr_coverage:
+        return HypnogramOut(
+            night_start_utc=night.night_start_utc,
+            tz_offset_min=night.tz_offset_min,
+            sessions=[],
+            summary=_summarise([]),
+        )
 
     # Actigraphy is computed once over the whole timeline (its weighted window
     # stays valid at every period's edges); staging/smoothing run per period.
