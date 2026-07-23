@@ -54,10 +54,16 @@ def smooth_stages(stages: np.ndarray, period: tuple[int, int], params: Params) -
             break
         # Shortest first for stable, deterministic merging.
         k, start, end, val = min(offenders, key=lambda r: r[2] - r[1])
-        prev_val = runs[k - 1][2] if k > 0 else None
-        next_val = runs[k + 1][2] if k + 1 < len(runs) else None
+        prev = runs[k - 1] if k > 0 else None
+        next_ = runs[k + 1] if k + 1 < len(runs) else None
+        prev_val = prev[2] if prev is not None else None
+        next_val = next_[2] if next_ is not None else None
         # Absorb into the neighbour; if both exist and agree, take it; otherwise
-        # fall back to LIGHT as the neutral in-sleep default.
+        # fall back to LIGHT as the neutral in-sleep default. But the target must
+        # never equal the bout's own value, or the merge is a no-op and the loop
+        # stalls (a LIGHT singleton between two different stages would otherwise
+        # "merge" to LIGHT forever) — in that case absorb into the longer
+        # neighbour instead, which is always a different stage and makes progress.
         if prev_val is not None and next_val is not None:
             target = prev_val if prev_val == next_val else LIGHT
         elif prev_val is not None:
@@ -66,6 +72,10 @@ def smooth_stages(stages: np.ndarray, period: tuple[int, int], params: Params) -
             target = next_val
         else:
             target = LIGHT
+        neighbours = [r for r in (prev, next_) if r is not None]
+        if target == val and neighbours:
+            longer = max(neighbours, key=lambda r: r[1] - r[0])
+            target = longer[2]
         out[start:end] = target
 
     return out

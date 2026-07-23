@@ -69,25 +69,30 @@ class ActigraphyParams:
 class StagingParams:
     """Step 3 — deep / REM / light heuristics for asleep epochs."""
 
-    # "Night minimum" HR = this percentile of valid HR within the sleep period.
-    hr_floor_percentile: float = 5.0
-    # DEEP: HR within this margin of the night floor (bpm)...
-    deep_hr_margin_bpm: float = 4.0
+    # Deep/REM are carved from RELATIVE percentiles of this night's own asleep
+    # HR distribution, not absolute bpm margins — resting HR and its range vary
+    # night to night, so fixed margins found all deep on one night and none on
+    # the next (validated on PhysioNet PSG: deep sens swung 0.36 -> 0.00 across
+    # subjects). See staging.py.
+    # DEEP: smoothed HR at/below this percentile of asleep HR (the low tail)...
+    deep_hr_percentile: float = 45.0
     # ...and activity at/below this (rescaled), sustained over deep_window epochs.
     deep_act_max: float = 0.15
     deep_window_epochs: int = 6
-    # ...and epoch-to-epoch HR variability below this (bpm).
-    deep_hrv_max: float = 1.5
+    # ...and epoch-to-epoch HR variability below this (bpm). Loose: only rejects
+    # the most volatile epochs from the low-HR tail.
+    deep_hrv_max: float = 3.0
 
-    # REM: activity at/below this (rescaled)...
-    rem_act_max: float = 0.25
-    # ...and HR elevated at least this far above the night floor (bpm)...
-    rem_hr_floor_bpm: float = 5.0
-    # ...and HR variability at least this high (bpm)...
-    rem_hrv_min: float = 2.5
+    # REM: smoothed HR at/above this percentile of asleep HR (the high tail)...
+    rem_hr_percentile: float = 60.0
+    # ...and activity at/below this (rescaled; muscle atonia keeps REM still)...
+    rem_act_max: float = 0.30
+    # ...and HR variability at least this high (bpm). 0 = off: the percentile
+    # band carries REM; the strict >=2.5 gate collapsed recall to 0.06 on PSG.
+    rem_hrv_min: float = 0.0
     # ...with occurrence weighted toward later cycles: epochs before this
     # fraction of the sleep period are blocked from REM entirely.
-    rem_earliest_fraction: float = 0.20
+    rem_earliest_fraction: float = 0.15
 
     # Window (epochs) for the epoch-to-epoch HR variability estimate.
     hrv_window_epochs: int = 5

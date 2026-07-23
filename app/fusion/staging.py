@@ -51,6 +51,13 @@ def stage_asleep(
 
     `asleep` is the post-actigraphy boolean (True=asleep). Epochs outside the
     sleep period, or awake within it, are AWAKE.
+
+    Deep/REM are carved from the low/high tails of *this night's own* asleep HR
+    distribution (relative percentiles), not absolute bpm margins: resting HR and
+    its dynamic range vary enough night to night that fixed margins detected all
+    deep on one night and none on the next. Percentiles guarantee a plausible
+    stage split every night at the cost of exact per-epoch accuracy — honest for
+    a BPM-only sensor with no training.
     """
     s = params.staging
     onset, offset = period
@@ -63,18 +70,20 @@ def stage_asleep(
     if not asleep_here.any():
         return stages
 
-    # Night HR floor / median measured within the sleep period's valid readings.
+    # Night HR median measured within the sleep period's valid readings.
     period_hr = series.hr[onset:offset]
     valid = period_hr[np.isfinite(period_hr)]
-    hr_floor = float(np.percentile(valid, s.hr_floor_percentile)) if valid.size else 0.0
     hr_median = float(np.median(valid)) if valid.size else 0.0
+
+    hr_smooth = moving_average(series.hr_filled, s.hrv_window_epochs)
 
     # --- WAKE-BY-HR: quiet-but-roused wake is invisible to actigraphy; a
     # sustained run of smoothed HR well above the session median recovers it. ---
     if valid.size:
-        hr_smooth = moving_average(series.hr_filled, s.hrv_window_epochs)
         elevated = hr_smooth > hr_median + s.wake_hr_margin_bpm
         asleep_here &= ~_sustained_runs(elevated, s.wake_hr_min_epochs)
+    if not asleep_here.any():
+        return stages
 
     # Everything asleep starts as LIGHT; deep/REM carve out from there.
     stages[asleep_here] = LIGHT
@@ -82,30 +91,35 @@ def stage_asleep(
     hrv = _hr_variability(series, s.hrv_window_epochs)
     sustained_low_act = moving_average(series.act, s.deep_window_epochs)
 
-    # --- DEEP: HR near floor + sustained low movement + low HR variability ---
+    # Per-night HR band edges: percentiles of the *asleep* smoothed HR only, so
+    # awake spikes don't skew them. Deep = low tail, REM = high tail.
+    asleep_hr = hr_smooth[asleep_here]
+    deep_hr_thr = float(np.percentile(asleep_hr, s.deep_hr_percentile))
+    rem_hr_thr = float(np.percentile(asleep_hr, s.rem_hr_percentile))
+
+    # --- DEEP: low HR tail + sustained low movement + stable HR (low variability) ---
     deep_mask = (
         asleep_here
-        & (series.hr_filled <= hr_floor + s.deep_hr_margin_bpm)
+        & (hr_smooth <= deep_hr_thr)
         & (sustained_low_act <= s.deep_act_max)
         & (hrv <= s.deep_hrv_max)
     )
     stages[deep_mask] = DEEP
 
-    # --- REM: low movement + HR above the deep floor + elevated variability,
-    # blocked from the early part of the sleep period (weight toward later). ---
+    # --- REM: high HR tail + low movement (muscle atonia) + elevated HR
+    # variability, weighted toward later cycles (blocked from the early period). ---
     length = max(1, offset - onset)
     pos = (np.arange(n) - onset) / length  # fractional position within period
     rem_allowed = pos >= s.rem_earliest_fraction
     rem_mask = (
         asleep_here
+        & (hr_smooth >= rem_hr_thr)
         & (series.act <= s.rem_act_max)
-        & (series.hr_filled >= hr_floor + s.rem_hr_floor_bpm)
         & (hrv >= s.rem_hrv_min)
         & rem_allowed
     )
-    # REM takes precedence over an earlier DEEP label only where deep failed;
-    # since deep requires low HRV and REM requires high HRV they rarely overlap,
-    # but resolve any tie toward REM's stronger HR/variability signal.
+    # REM overrides deep only where both somehow fire; the low/high HR tails are
+    # disjoint by construction, so this just resolves the boundary toward REM.
     stages[rem_mask] = REM
 
     return stages
