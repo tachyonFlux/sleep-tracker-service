@@ -74,8 +74,16 @@ class StagingParams:
     # night to night, so fixed margins found all deep on one night and none on
     # the next (validated on PhysioNet PSG: deep sens swung 0.36 -> 0.00 across
     # subjects). See staging.py.
-    # DEEP: smoothed HR at/below this percentile of asleep HR (the low tail)...
-    deep_hr_percentile: float = 45.0
+    # DEEP/REM use HYSTERESIS bands, not single cutoffs: a stage is *entered* at a
+    # hard percentile but *held* across a looser one, so smoothed HR wobbling near
+    # one line no longer flips the stage epoch-to-epoch. Only a decisive move out
+    # of the sticky band ends a bout. This consolidates REM/Deep into realistic
+    # blocks (see staging.py). Enter/exit pairs are centred on the old single
+    # cutoffs (deep 45, rem 60) so overall stage proportions stay close.
+    # DEEP: enter when smoothed HR is at/below the low tail; hold until it rises
+    # past the (higher) exit percentile...
+    deep_enter_percentile: float = 42.0
+    deep_exit_percentile: float = 50.0
     # ...and activity at/below this (rescaled), sustained over deep_window epochs.
     deep_act_max: float = 0.15
     deep_window_epochs: int = 6
@@ -83,8 +91,10 @@ class StagingParams:
     # the most volatile epochs from the low-HR tail.
     deep_hrv_max: float = 3.0
 
-    # REM: smoothed HR at/above this percentile of asleep HR (the high tail)...
-    rem_hr_percentile: float = 60.0
+    # REM: enter when smoothed HR is at/above the high tail; hold until it drops
+    # below the (lower) exit percentile...
+    rem_enter_percentile: float = 62.0
+    rem_exit_percentile: float = 52.0
     # ...and activity at/below this (rescaled; muscle atonia keeps REM still)...
     rem_act_max: float = 0.30
     # ...and HR variability at least this high (bpm). 0 = off: the percentile
@@ -112,8 +122,8 @@ class SmoothingParams:
     """Step 4 — minimum bout lengths, cycle prior, fragment merging (epochs)."""
 
     min_wake_epochs: int = 2   # in-sleep wake bouts shorter than this -> sleep
-    min_deep_epochs: int = 6   # ~3 min at 30 s
-    min_rem_epochs: int = 6
+    min_deep_epochs: int = 10  # ~5 min at 30 s (backstop below the hysteresis band)
+    min_rem_epochs: int = 10
     min_light_epochs: int = 2
     cycle_minutes: float = 90.0  # soft prior; used by staging weighting
 
